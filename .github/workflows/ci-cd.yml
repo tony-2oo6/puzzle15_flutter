@@ -1,0 +1,122 @@
+name: CI/CD · Flutter Web + PWA
+
+# - Pull requests hacia develop/main: análisis, pruebas, build web y
+#   verificación de PWA (no despliega).
+# - Push a main (merge de release/hotfix en Gitflow): todo lo anterior y
+#   despliegue automático en GitHub Pages.
+on:
+  push:
+    branches: [main, develop, "release/**", "hotfix/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Análisis estático y pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Versión de Flutter
+        run: flutter --version
+
+      - name: Instalar dependencias
+        run: flutter pub get
+
+      - name: Formato del código
+        # Avisa (sin bloquear) si alguien olvidó ejecutar `dart format .`.
+        run: |
+          if ! dart format --output=none --set-exit-if-changed lib test; then
+            echo "::warning::Hay archivos sin formatear. Ejecuta 'dart format .' antes de hacer commit."
+          fi
+
+      - name: Análisis estático
+        run: flutter analyze --no-fatal-infos
+
+      - name: Pruebas unitarias y de widgets
+        run: flutter test --coverage
+
+  build-web:
+    name: Build web + verificación PWA
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Calcular base href de GitHub Pages
+        id: base
+        run: |
+          if [ "${{ github.event.repository.name }}" = "${{ github.repository_owner }}.github.io" ]; then
+            echo "href=/" >> "$GITHUB_OUTPUT"
+          else
+            echo "href=/${{ github.event.repository.name }}/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compilar Flutter Web
+        # --no-web-resources-cdn: CanvasKit se sirve desde el propio sitio
+        # (necesario para que el juego funcione sin conexión).
+        run: |
+          flutter pub get
+          flutter build web --release --no-web-resources-cdn \
+            --base-href "${{ steps.base.outputs.href }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tool/pwa/package-lock.json
+
+      - name: Instalar herramientas PWA
+        working-directory: tool/pwa
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Generar service worker offline
+        run: node tool/pwa/generate_service_worker.mjs build/web
+
+      - name: Verificar que sigue siendo una PWA (instalable y offline)
+        run: node tool/pwa/verify_pwa.mjs build/web --base-href "${{ steps.base.outputs.href }}" --runtime
+
+      - name: Preparar sitio para GitHub Pages
+        run: |
+          touch build/web/.nojekyll
+          cp build/web/index.html build/web/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    name: Desplegar en GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build-web
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publicar
+        id: deployment
+        uses: actions/deploy-pages@v4
