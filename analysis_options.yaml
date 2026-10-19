@@ -8,6 +8,11 @@ analyzer:
     - build/**
     - tool/**
     - web/**
+    - android/**
+    - ios/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   rules:
