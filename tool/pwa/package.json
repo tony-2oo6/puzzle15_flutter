@@ -1,0 +1,13 @@
+{
+  "name": "puzzle15-pwa-tools",
+  "private": true,
+  "description": "Herramientas de CI: genera el service worker y verifica que el build web sea una PWA offline.",
+  "type": "module",
+  "scripts": {
+    "generate-sw": "node generate_service_worker.mjs ../../build/web",
+    "verify": "node verify_pwa.mjs ../../build/web --runtime"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}
