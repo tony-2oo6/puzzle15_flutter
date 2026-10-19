@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   # Persistencia local (marcadores y preferencias).
   shared_preferences: ^2.3.3
+  # Animaciones de entrada para el splash, el menú y los diálogos.
+  animate_do: ^3.3.4
 
 dev_dependencies:
   flutter_test:
